@@ -1,0 +1,4201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>particle SPH - 200 Interactions + 50+ Materials</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      background-color: #222; 
+      overflow: hidden;
+      font-family: sans-serif;
+      color: #ccc;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 9999;
+      width: 220px;
+    }
+    #ui h1 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #fff;
+    }
+    #ui label {
+      font-size: 13px;
+      display: block;
+      margin-bottom: 5px;
+    }
+    #ui input[type=range] {
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    #ui select {
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    #canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>particle SPH</h1>
+    
+    <!-- 생성할 물질 선택 -->
+    <label>
+      Material:
+      <select id="materialSelect">
+        <!-- 50+ 물질들 전부 -->
+        <option value="water">Water</option>
+        <option value="sand">Sand</option>
+        <option value="dust">Dust</option>
+        <option value="oil">Oil</option>
+        <option value="lava">Lava</option>
+        <option value="metal">Metal</option>
+        <option value="firePowder">FirePowder</option>
+        <option value="steam">Steam</option>
+        <option value="ash">Ash</option>
+        <option value="milk">Milk</option>
+        <option value="honey">Honey</option>
+        <option value="acid">Acid</option>
+        <option value="slime">Slime</option>
+        <option value="ice">Ice</option>
+        <option value="salt">Salt</option>
+        <option value="sugar">Sugar</option>
+        <option value="flour">Flour</option>
+        <option value="rock">Rock</option>
+        <option value="wood">Wood</option>
+        <option value="coal">Coal</option>
+        <option value="glass">Glass</option>
+        <option value="soap">Soap</option>
+        <option value="mercury">Mercury</option>
+        <option value="blood">Blood</option>
+        <option value="tar">Tar</option>
+        <option value="cement">Cement</option>
+        <option value="gel">Gel</option>
+        <option value="plastic">Plastic</option>
+        <option value="uranium">Uranium</option>
+        <option value="plasma">Plasma</option>
+        <option value="neonGas">NeonGas</option>
+        <option value="nitrogen">Nitrogen</option>
+        <option value="helium">Helium</option>
+        <option value="rocketFuel">RocketFuel</option>
+        <option value="wax">Wax</option>
+        <option value="rubber">Rubber</option>
+        <option value="lead">Lead</option>
+        <option value="gold">Gold</option>
+        <option value="silver">Silver</option>
+        <option value="grass">Grass</option>
+        <option value="mud">Mud</option>
+        <option value="clay">Clay</option>
+        <option value="ammonia">Ammonia</option>
+        <option value="hydrogen">Hydrogen</option>
+        <option value="charcoal">Charcoal</option>
+        <option value="paper">Paper</option>
+        <option value="gunPowder">GunPowder</option>
+        <option value="spice">Spice</option>
+        <option value="chocolate">Chocolate</option>
+        <option value="plasticine">Plasticine</option>
+        <option value="batteryFluid">BatteryFluid</option>
+        <option value="plankton">Plankton</option>
+        <option value="fungus">Fungus</option>
+        <option value="virus">Virus</option>
+        <option value="magma">Magma</option>
+        <option value="obsidian">Obsidian</option>
+        <option value="diamond">Diamond</option>
+        <option value="steamSuperhot">SteamSuperhot</option>
+        <option value="ammunition">Ammunition</option>
+        
+        <!-- 상호작용용 추가 물질 -->
+        <option value="rust">Rust</option>
+        <option value="dilutedAcid">DilutedAcid</option>
+      </select>
+    </label>
+    
+    <!-- 브러시 사이즈 -->
+    <label>Brush Size: <span id="brushVal">10</span>
+      <input type="range" id="brushRange" min="1" max="50" step="1" value="10">
+    </label>
+    
+    <!-- 시뮬레이션 속도 -->
+    <label>Simulation Speed: <span id="speedVal">1</span>
+      <input type="range" id="speedRange" min="0.1" max="3" step="0.1" value="1">
+    </label>
+    
+    <!-- 중력 -->
+    <label>Gravity: <span id="gravVal">50</span>
+      <input type="range" id="gravRange" min="-20" max="100" step="1" value="50">
+    </label>
+    
+    <!-- 불 확산 속도 -->
+    <label>Fire Spread Speed: <span id="fireVal">1</span>
+      <input type="range" id="fireRange" min="0.1" max="3" step="0.1" value="1">
+    </label>
+  </div>
+
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // === UI Elements ===
+    const materialSelect = document.getElementById('materialSelect');
+    const brushRange = document.getElementById('brushRange');
+    const brushVal = document.getElementById('brushVal');
+    const speedRange = document.getElementById('speedRange');
+    const speedVal = document.getElementById('speedVal');
+    const gravRange = document.getElementById('gravRange');
+    const gravVal = document.getElementById('gravVal');
+    const fireRange = document.getElementById('fireRange');
+    const fireVal = document.getElementById('fireVal');
+
+    let brushSize = 10;           // 브러시 반경
+
+    let timeScale = 1.0;          // 시뮬레이션 속도 배율
+    let GRAVITY = 50;             // 중력
+    let fireSpreadRate = 1.0;     // 불 확산/온도 전파 속도
+
+    // === SPH & Granular Parameters ===
+    const PARTICLE_RADIUS = 3;
+    const H = 50;                // 근방 탐색 거리
+    const REST_DENSITY = 1;
+    const MASS = 1;
+    let K = 0.05;                // 압력 계수
+
+    const frictionCoefficient = 0.5;
+    const restitution = 0.05;
+
+    // === Spatial Hash ===
+    const CELL_SIZE = H;
+    let cellMap = new Map();
+
+    // === Particle Array ===
+    let particles = [];
+
+    // === Materials (50+개) ===
+    const materials = {
+        water: {
+            color: "rgba(0,128,255,0.8)",
+            flameColor: "rgba(255,0,0,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.02,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: { temp: 100, to: "steam" }
+        },
+        sand: {
+            color: "rgba(255,215,0,0.8)",
+            flameColor: "rgba(255,70,0,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        dust: {
+            color: "rgba(255,255,255,0.8)",
+            flameColor: "rgba(255,50,0,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        oil: {
+            color: "rgba(80,80,0,0.8)",
+            flameColor: "rgba(255,100,0,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.05,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        lava: {
+            color: "rgba(255,80,0,0.8)",
+            flameColor: "rgba(255,230,50,0.8)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.1,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        metal: {
+            color: "rgba(180,180,180,0.8)",
+            flameColor: "rgba(255,130,80,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.03,
+            thermalCond: 0.9,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        firePowder: {
+            color: "rgba(200,200,200,0.9)",
+            flameColor: "rgba(255,50,50,0.9)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.02,
+            thermalCond: 0.4,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        steam: {
+            color: "rgba(255,255,255,0.5)",
+            flameColor: "rgba(255,150,150,0.5)",
+            densityFactor: 0.1,
+            viscosityFactor: 0.01,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ash: {
+            color: "rgba(80,80,80,0.8)",
+            flameColor: "rgba(255,255,0,0.8)",
+            densityFactor: 0.3,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+
+        // 나머지 50+ 물질 모두 기술
+        milk: {
+            color: "rgba(250,250,230,0.8)",
+            flameColor: "rgba(255,140,0,0.8)",
+            densityFactor: 1.03,
+            viscosityFactor: 0.03,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        honey: {
+            color: "rgba(255,200,0,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 1.4,
+            viscosityFactor: 0.2,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 320,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        acid: {
+            color: "rgba(200,255,0,0.6)",
+            flameColor: "rgba(255,70,70,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.01,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        slime: {
+            color: "rgba(0,255,100,0.6)",
+            flameColor: "rgba(255,50,50,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.15,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ice: {
+            color: "rgba(180,230,255,0.8)",
+            flameColor: "rgba(180,230,255,0.4)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: { temp: 0, to: "water" }
+        },
+        salt: {
+            color: "rgba(240,240,255,0.8)",
+            flameColor: "rgba(255,170,170,0.8)",
+            densityFactor: 2.16,
+            viscosityFactor: 0.01,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sugar: {
+            color: "rgba(255,248,220,0.8)",
+            flameColor: "rgba(255,120,50,0.8)",
+            densityFactor: 1.6,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        flour: {
+            color: "rgba(255,255,240,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rock: {
+            color: "rgba(100,100,100,0.9)",
+            flameColor: "rgba(255,80,0,0.6)",
+            densityFactor: 2.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        wood: {
+            color: "rgba(139,69,19,0.9)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coal: {
+            color: "rgba(50,50,50,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: true,
+            burnTemp: 400,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        glass: {
+            color: "rgba(180,255,255,0.3)",
+            flameColor: "rgba(255,255,0,0.3)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        soap: {
+            color: "rgba(255,255,255,0.7)",
+            flameColor: "rgba(255,80,80,0.7)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        mercury: {
+            color: "rgba(175,175,175,0.8)",
+            flameColor: "rgba(255,130,80,0.8)",
+            densityFactor: 13.6,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        blood: {
+            color: "rgba(200,0,0,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 1.06,
+            viscosityFactor: 0.03,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        tar: {
+            color: "rgba(40,40,10,0.9)",
+            flameColor: "rgba(255,80,0,0.9)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.3,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        cement: {
+            color: "rgba(160,160,160,0.8)",
+            flameColor: "rgba(255,80,0,0.7)",
+            densityFactor: 2.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        gel: {
+            color: "rgba(180,255,180,0.6)",
+            flameColor: "rgba(255,150,150,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.2,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        plastic: {
+            color: "rgba(220,220,220,0.7)",
+            flameColor: "rgba(255,70,70,0.7)",
+            densityFactor: 0.95,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        uranium: {
+            color: "rgba(0,200,0,0.8)",
+            flameColor: "rgba(255,220,0,0.8)",
+            densityFactor: 19.1,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        plasma: {
+            color: "rgba(255,100,100,0.5)",
+            flameColor: "rgba(255,255,100,0.5)",
+            densityFactor: 0.01,
+            viscosityFactor: 0.0,
+            thermalCond: 1.0,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        neonGas: {
+            color: "rgba(255,0,200,0.4)",
+            flameColor: "rgba(255,150,150,0.5)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        nitrogen: {
+            color: "rgba(180,180,255,0.4)",
+            flameColor: "rgba(255,255,0,0.6)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        helium: {
+            color: "rgba(200,200,255,0.3)",
+            flameColor: "rgba(255,200,200,0.3)",
+            densityFactor: 0.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.05,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        rocketFuel: {
+            color: "rgba(255,0,0,0.8)",
+            flameColor: "rgba(255,200,0,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.05,
+            thermalCond: 0.4,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        wax: {
+            color: "rgba(255,235,180,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 120,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rubber: {
+            color: "rgba(50,50,50,0.7)",
+            flameColor: "rgba(255,80,0,0.7)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.0,
+            thermalCond: 0.05,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        lead: {
+            color: "rgba(100,100,120,0.8)",
+            flameColor: "rgba(255,130,130,0.8)",
+            densityFactor: 11.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.35,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        gold: {
+            color: "rgba(255,215,0,0.8)",
+            flameColor: "rgba(255,230,50,0.8)",
+            densityFactor: 19.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        silver: {
+            color: "rgba(192,192,192,0.8)",
+            flameColor: "rgba(255,200,150,0.8)",
+            densityFactor: 10.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.95,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        grass: {
+            color: "rgba(50,200,50,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        mud: {
+            color: "rgba(120,100,80,0.9)",
+            flameColor: "rgba(255,80,0,0.7)",
+            densityFactor: 1.6,
+            viscosityFactor: 0.08,
+            thermalCond: 0.15,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        clay: {
+            color: "rgba(200,150,120,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.8,
+            viscosityFactor: 0.01,
+            thermalCond: 0.25,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ammonia: {
+            color: "rgba(200,255,220,0.6)",
+            flameColor: "rgba(255,150,150,0.6)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.25,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        hydrogen: {
+            color: "rgba(200,255,255,0.4)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.07,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 100,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        charcoal: {
+            color: "rgba(40,40,40,0.8)",
+            flameColor: "rgba(255,80,0,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        paper: {
+            color: "rgba(250,250,240,0.9)",
+            flameColor: "rgba(255,100,50,0.9)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 180,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        gunPowder: {
+            color: "rgba(70,70,70,0.9)",
+            flameColor: "rgba(255,20,20,0.9)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 160,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        spice: {
+            color: "rgba(255,100,50,0.8)",
+            flameColor: "rgba(255,50,50,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        chocolate: {
+            color: "rgba(90,50,20,0.8)",
+            flameColor: "rgba(255,140,50,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 210,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        plasticine: {
+            color: "rgba(255,170,120,0.7)",
+            flameColor: "rgba(255,100,0,0.7)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.1,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        batteryFluid: {
+            color: "rgba(200,200,255,0.6)",
+            flameColor: "rgba(255,80,80,0.6)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        plankton: {
+            color: "rgba(150,255,150,0.6)",
+            flameColor: "rgba(255,120,80,0.7)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.01,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        fungus: {
+            color: "rgba(130,190,130,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 180,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        virus: {
+            color: "rgba(200,30,200,0.5)",
+            flameColor: "rgba(255,50,50,0.5)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        magma: {
+            color: "rgba(255,100,0,0.8)",
+            flameColor: "rgba(255,180,50,0.8)",
+            densityFactor: 2.6,
+            viscosityFactor: 0.2,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        obsidian: {
+            color: "rgba(40,40,60,0.9)",
+            flameColor: "rgba(255,180,0,0.5)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        diamond: {
+            color: "rgba(220,255,255,0.7)",
+            flameColor: "rgba(255,220,80,0.7)",
+            densityFactor: 3.5,
+            viscosityFactor: 0.0,
+            thermalCond: 1.0,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        steamSuperhot: {
+            color: "rgba(255,255,255,0.3)",
+            flameColor: "rgba(255,80,80,0.3)",
+            densityFactor: 0.05,
+            viscosityFactor: 0.01,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ammunition: {
+            color: "rgba(150,150,150,0.8)",
+            flameColor: "rgba(255,50,50,0.8)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rust: {
+            color: "rgba(150,80,0,0.9)",
+            flameColor: "rgba(255,120,50,0.7)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        dilutedAcid: {
+            color: "rgba(220,255,120,0.6)",
+            flameColor: "rgba(255,150,150,0.6)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.01,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        // =========================================
+        // 2) "새로 등장하는" 변환 물질들 전부 추가
+        //    (일반 상호작용 100 + 고급 상호작용 100 결과)
+        // =========================================
+
+        wetSand: {
+            color: "rgba(180,150,100,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        muddyWater: {
+            color: "rgba(90,70,50,0.7)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.03,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        wetCharcoal: {
+            color: "rgba(60,60,70,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        curdledMilk: {
+            color: "rgba(230,230,190,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        stickyDust: {
+            color: "rgba(220,220,200,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.04,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        frostedDust: {
+            color: "rgba(240,240,240,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        dirtyPaste: {
+            color: "rgba(130,100,80,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        gooeyDust: {
+            color: "rgba(200,255,200,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.15,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        sandyDust: {
+            color: "rgba(240,220,180,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltWater: {
+            color: "rgba(100,150,255,0.6)",
+            flameColor: "rgba(255,100,100,0.7)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.02,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sugarWater: {
+            color: "rgba(230,240,220,0.6)",
+            flameColor: "rgba(255,120,120,0.7)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.03,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        muddySand: {
+            color: "rgba(140,120,90,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.05,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        coldSand: {
+            color: "rgba(220,220,180,0.8)",
+            flameColor: "rgba(200,200,200,0.6)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.15,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        grayDust: {
+            color: "rgba(180,180,180,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        graySand: {
+            color: "rgba(150,150,150,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ashMud: {
+            color: "rgba(100,90,90,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.05,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        milkSand: {
+            color: "rgba(220,210,160,0.8)",
+            flameColor: "rgba(255,120,80,0.7)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        milkDust: {
+            color: "rgba(240,240,220,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.03,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        spoiledSlime: {
+            color: "rgba(180,255,140,0.7)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.15,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sweetMilk: {
+            color: "rgba(245,245,210,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 1.03,
+            viscosityFactor: 0.03,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        milkSugarMix: {
+            color: "rgba(255,240,210,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.04,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        saltyMilk: {
+            color: "rgba(245,245,235,0.8)",
+            flameColor: "rgba(255,120,100,0.8)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.03,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        dough: {
+            color: "rgba(255,250,220,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.2,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        blackenedMilk: {
+            color: "rgba(100,100,90,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.04,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        honeySand: {
+            color: "rgba(220,180,80,0.8)",
+            flameColor: "rgba(255,120,50,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        stickyMud: {
+            color: "rgba(130,110,60,0.8)",
+            flameColor: "rgba(255,80,50,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        slimyHoney: {
+            color: "rgba(220,200,80,0.7)",
+            flameColor: "rgba(255,100,50,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.2,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 320,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        honeyedCharcoal: {
+            color: "rgba(80,70,40,0.8)",
+            flameColor: "rgba(255,80,50,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.05,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coldCharcoal: {
+            color: "rgba(50,50,60,0.8)",
+            flameColor: "rgba(200,200,255,0.6)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.02,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coldBrine: {
+            color: "rgba(200,220,255,0.6)",
+            flameColor: "rgba(255,150,150,0.6)",
+            densityFactor: 1.05,
+            viscosityFactor: 0.02,
+            thermalCond: 0.25,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sweetIce: {
+            color: "rgba(220,255,230,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        coldFlour: {
+            color: "rgba(255,255,230,0.8)",
+            flameColor: "rgba(200,200,255,0.6)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        saltySand: {
+            color: "rgba(240,220,200,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.6,
+            viscosityFactor: 0.01,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltyDust: {
+            color: "rgba(230,230,240,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        dehydratedSlime: {
+            color: "rgba(200,255,150,0.6)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.05,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltedHoney: {
+            color: "rgba(240,200,100,0.8)",
+            flameColor: "rgba(255,80,50,0.8)",
+            densityFactor: 1.4,
+            viscosityFactor: 0.1,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        powderedSugar: {
+            color: "rgba(255,255,240,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        syrupySlime: {
+            color: "rgba(220,255,200,0.7)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.2,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        bakingMix: {
+            color: "rgba(250,250,220,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.05,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        sweetAsh: {
+            color: "rgba(180,180,180,0.7)",
+            flameColor: "rgba(255,150,80,0.8)",
+            densityFactor: 0.3,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        grittyFlour: {
+            color: "rgba(250,250,230,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.02,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        powderMix: {
+            color: "rgba(255,255,240,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        blackFlour: {
+            color: "rgba(100,100,100,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.02,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        stonePowder: {
+            color: "rgba(160,160,160,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        crushedRock: {
+            color: "rgba(120,120,120,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 2.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sawdust: {
+            color: "rgba(220,200,150,0.8)",
+            flameColor: "rgba(255,80,50,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        sandyWood: {
+            color: "rgba(150,110,80,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        charredWood: {
+            color: "rgba(70,60,50,0.9)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coalSandMix: {
+            color: "rgba(80,70,50,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 400,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coalDust: {
+            color: "rgba(60,60,60,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        coalAshMix: {
+            color: "rgba(80,80,70,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        carbonMix: {
+            color: "rgba(60,60,60,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: true,
+            burnTemp: 400,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        soapyWater: {
+            color: "rgba(210,250,250,0.7)",
+            flameColor: "rgba(255,120,120,0.7)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        sandySoap: {
+            color: "rgba(230,230,210,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        dustySoap: {
+            color: "rgba(240,240,230,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        graySoap: {
+            color: "rgba(200,200,200,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        milkSoap: {
+            color: "rgba(250,250,230,0.7)",
+            flameColor: "rgba(255,120,80,0.7)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        stickySoap: {
+            color: "rgba(230,230,210,0.7)",
+            flameColor: "rgba(255,80,80,0.7)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.15,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        cleanSlime: {
+            color: "rgba(200,255,220,0.6)",
+            flameColor: "rgba(255,80,80,0.7)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.15,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        neutralizedSoap: {
+            color: "rgba(220,240,240,0.7)",
+            flameColor: "rgba(255,80,80,0.7)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 300,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        mercurySand: {
+            color: "rgba(190,190,190,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 5.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        mercuryDust: {
+            color: "rgba(210,210,210,0.8)",
+            flameColor: "rgba(255,120,100,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        bloodDust: {
+            color: "rgba(200,60,60,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        bloodySand: {
+            color: "rgba(200,50,50,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 1.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        tarDust: {
+            color: "rgba(60,60,30,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.1,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        tarSand: {
+            color: "rgba(70,60,40,0.9)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.1,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        cementSandMix: {
+            color: "rgba(200,200,180,0.8)",
+            flameColor: "rgba(255,100,80,0.7)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        cementPowder: {
+            color: "rgba(180,180,180,0.8)",
+            flameColor: "rgba(255,80,80,0.7)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        gelDust: {
+            color: "rgba(180,255,180,0.6)",
+            flameColor: "rgba(255,120,120,0.6)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.2,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        gelSand: {
+            color: "rgba(200,255,200,0.7)",
+            flameColor: "rgba(255,120,80,0.7)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.1,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        plasticDust: {
+            color: "rgba(230,230,230,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        plasticSand: {
+            color: "rgba(220,210,210,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 280,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        radioactiveDust: {
+            color: "rgba(100,250,100,0.8)",
+            flameColor: "rgba(255,220,50,0.8)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        radioactiveSand: {
+            color: "rgba(120,250,120,0.8)",
+            flameColor: "rgba(255,220,80,0.8)",
+            densityFactor: 2.1,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        energizedDust: {
+            color: "rgba(255,255,160,0.8)",
+            flameColor: "rgba(255,100,100,0.9)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        energizedSand: {
+            color: "rgba(255,255,120,0.8)",
+            flameColor: "rgba(255,150,150,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.01,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        explosiveDust: {
+            color: "rgba(250,200,200,0.9)",
+            flameColor: "rgba(255,80,80,0.9)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        explosiveSand: {
+            color: "rgba(250,180,180,0.8)",
+            flameColor: "rgba(255,100,100,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        waxDust: {
+            color: "rgba(255,240,200,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 120,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        waxSand: {
+            color: "rgba(255,230,180,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 120,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rubberDust: {
+            color: "rgba(60,60,60,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.05,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rubberSand: {
+            color: "rgba(70,70,70,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.05,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        leadDust: {
+            color: "rgba(120,120,130,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        leadSand: {
+            color: "rgba(110,110,120,0.8)",
+            flameColor: "rgba(255,120,120,0.8)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.35,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        goldDust: {
+            color: "rgba(250,220,100,0.8)",
+            flameColor: "rgba(255,230,80,0.8)",
+            densityFactor: 1.9,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        goldSand: {
+            color: "rgba(255,220,120,0.8)",
+            flameColor: "rgba(255,230,80,0.8)",
+            densityFactor: 2.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        silverDust: {
+            color: "rgba(210,210,210,0.8)",
+            flameColor: "rgba(255,220,180,0.8)",
+            densityFactor: 1.6,
+            viscosityFactor: 0.0,
+            thermalCond: 0.95,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        silverSand: {
+            color: "rgba(220,220,220,0.8)",
+            flameColor: "rgba(255,220,180,0.8)",
+            densityFactor: 2.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.95,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        grassyDust: {
+            color: "rgba(150,220,150,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        grassySand: {
+            color: "rgba(160,230,160,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 150,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        muddyDust: {
+            color: "rgba(140,120,100,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.05,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        clayPowder: {
+            color: "rgba(210,170,140,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.25,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        lightDust: {
+            color: "rgba(240,240,240,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        blackPaper: {
+            color: "rgba(60,60,60,0.9)",
+            flameColor: "rgba(255,120,80,0.9)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 180,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        volatileDust: {
+            color: "rgba(220,220,220,0.9)",
+            flameColor: "rgba(255,50,50,0.9)",
+            densityFactor: 0.6,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 160,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        spicyDust: {
+            color: "rgba(255,130,60,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.5,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        cocoaDust: {
+            color: "rgba(90,60,30,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.4,
+            viscosityFactor: 0.02,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 210,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        stickyClayMix: {
+            color: "rgba(200,160,120,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.1,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rustDust: {
+            color: "rgba(160,100,50,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+
+        // ====================================================
+        // 추가 (고급 상호작용)에서 등장하는 다양한 물질들
+        // ====================================================
+        clumpedDust: {
+            color: "rgba(220,220,210,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.04,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        steel: {
+            color: "rgba(160,160,170,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 7.8,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        metalCast: {
+            color: "rgba(180,185,185,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        volcanicRock: {
+            color: "rgba(90,60,50,0.9)",
+            flameColor: "rgba(255,120,80,0.7)",
+            densityFactor: 2.8,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ironRock: {
+            color: "rgba(120,80,70,0.9)",
+            flameColor: "rgba(255,80,60,0.7)",
+            densityFactor: 3.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        co2Gas: {
+            color: "rgba(220,220,220,0.5)",
+            flameColor: "rgba(255,120,120,0.5)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.01,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltedWood: {
+            color: "rgba(150,120,80,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.8,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        metalCastOverflow: {
+            // (혹시 별도 변환시)
+        },
+        moltenMetal: {
+            color: "rgba(255,140,80,0.8)",
+            flameColor: "rgba(255,180,100,0.8)",
+            densityFactor: 2.5,
+            viscosityFactor: 0.1,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltySteam: {
+            color: "rgba(230,230,255,0.4)",
+            flameColor: "rgba(255,120,120,0.4)",
+            densityFactor: 0.12,
+            viscosityFactor: 0.01,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        coGas: {
+            color: "rgba(220,220,220,0.4)",
+            flameColor: "rgba(255,120,120,0.4)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        graphite: {
+            color: "rgba(80,80,80,0.8)",
+            flameColor: "rgba(255,120,100,0.8)",
+            densityFactor: 2.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        carbide: {
+            color: "rgba(110,110,100,0.8)",
+            flameColor: "rgba(255,150,100,0.8)",
+            densityFactor: 3.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        slag: {
+            color: "rgba(100,80,70,0.9)",
+            flameColor: "rgba(255,120,80,0.9)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        erodedStone: {
+            color: "rgba(110,110,100,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 2.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.6,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        saltEncrustedStone: {
+            color: "rgba(150,150,130,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 2.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        opaqueGlass: {
+            color: "rgba(200,230,230,0.4)",
+            flameColor: "rgba(255,120,120,0.4)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        metalGlassAlloy: {
+            color: "rgba(180,220,220,0.6)",
+            flameColor: "rgba(255,150,80,0.6)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.02,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        etchedGlass: {
+            color: "rgba(200,255,255,0.3)",
+            flameColor: "rgba(255,150,150,0.3)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        foggyGlass: {
+            color: "rgba(200,200,200,0.3)",
+            flameColor: "rgba(255,150,150,0.3)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        blackAsh: {
+            color: "rgba(50,50,50,0.7)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.3,
+            viscosityFactor: 0.01,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        iron: {
+            color: "rgba(130,130,130,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        reddishWood: {
+            color: "rgba(160,100,80,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rustyWater: {
+            color: "rgba(150,120,80,0.7)",
+            flameColor: "rgba(255,150,150,0.7)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        syrup: {
+            color: "rgba(255,210,150,0.7)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.2,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        alloy: {
+            color: "rgba(170,170,180,0.8)",
+            flameColor: "rgba(255,150,100,0.8)",
+            densityFactor: 3.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.85,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        hyperAlloy: {
+            color: "rgba(180,180,200,0.8)",
+            flameColor: "rgba(255,180,120,0.8)",
+            densityFactor: 4.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.9,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        decorWood: {
+            color: "rgba(150,100,80,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        rottedWood: {
+            color: "rgba(90,70,50,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        dirtyWood: {
+            color: "rgba(110,90,70,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        syngas: {
+            color: "rgba(220,220,220,0.4)",
+            flameColor: "rgba(255,120,80,0.4)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        clumpedSand: {
+            color: "rgba(220,200,150,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.02,
+            thermalCond: 0.1,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        moltenIron: {
+            color: "rgba(255,120,60,0.8)",
+            flameColor: "rgba(255,180,100,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.1,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        brineSolution: {
+            color: "rgba(200,230,255,0.6)",
+            flameColor: "rgba(255,120,120,0.6)",
+            densityFactor: 1.02,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        stickySand: {
+            color: "rgba(220,200,150,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        blackResidue: {
+            color: "rgba(60,60,60,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.05,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        saltyMud: {
+            color: "rgba(130,110,90,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.07,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        ironSolution: {
+            color: "rgba(140,110,110,0.7)",
+            flameColor: "rgba(255,120,120,0.7)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.02,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        acidicEmulsion: {
+            color: "rgba(220,255,180,0.6)",
+            flameColor: "rgba(255,120,120,0.6)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.05,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        porousSand: {
+            color: "rgba(220,200,180,0.8)",
+            flameColor: "rgba(255,80,80,0.8)",
+            densityFactor: 1.3,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        crackedStone: {
+            color: "rgba(100,100,90,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        steamedWood: {
+            color: "rgba(130,100,70,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        wetRust: {
+            color: "rgba(140,80,40,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        paste: {
+            color: "rgba(150,150,120,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.0,
+            viscosityFactor: 0.2,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        stone: {
+            color: "rgba(100,100,100,0.9)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 2.5,
+            viscosityFactor: 0.0,
+            thermalCond: 0.7,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        acidicVapor: {
+            color: "rgba(200,255,200,0.4)",
+            flameColor: "rgba(255,120,120,0.4)",
+            densityFactor: 0.2,
+            viscosityFactor: 0.01,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        oilEmulsion: {
+            color: "rgba(120,120,60,0.6)",
+            flameColor: "rgba(255,120,80,0.6)",
+            densityFactor: 0.9,
+            viscosityFactor: 0.1,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 200,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        tarLikeResidue: {
+            color: "rgba(50,50,30,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 1.1,
+            viscosityFactor: 0.3,
+            thermalCond: 0.1,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        oiledMetal: {
+            color: "rgba(130,130,70,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 3.0,
+            viscosityFactor: 0.05,
+            thermalCond: 0.8,
+            flammable: true,
+            burnTemp: 300,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        smokyGlass: {
+            color: "rgba(120,120,120,0.3)",
+            flameColor: "rgba(255,120,120,0.3)",
+            densityFactor: 2.4,
+            viscosityFactor: 0.0,
+            thermalCond: 0.8,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        lime: {
+            color: "rgba(220,220,180,0.8)",
+            flameColor: "rgba(255,150,80,0.8)",
+            densityFactor: 2.0,
+            viscosityFactor: 0.0,
+            thermalCond: 0.4,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        moltenSalt: {
+            color: "rgba(255,230,180,0.8)",
+            flameColor: "rgba(255,140,80,0.8)",
+            densityFactor: 1.5,
+            viscosityFactor: 0.2,
+            thermalCond: 0.5,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+        caramelResidue: {
+            color: "rgba(150,80,40,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: true,
+            burnTemp: 220,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        sweetWood: {
+            color: "rgba(160,100,80,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        carbonFoam: {
+            color: "rgba(80,80,80,0.7)",
+            flameColor: "rgba(255,100,80,0.7)",
+            densityFactor: 0.2,
+            viscosityFactor: 0.0,
+            thermalCond: 0.3,
+            flammable: true,
+            burnTemp: 250,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        dustyWood: {
+            color: "rgba(140,110,90,0.8)",
+            flameColor: "rgba(255,100,80,0.8)",
+            densityFactor: 0.7,
+            viscosityFactor: 0.0,
+            thermalCond: 0.15,
+            flammable: true,
+            burnTemp: 350,
+            transformOnBurn: "ash",
+            transformOnTemp: null
+        },
+        pasteOverflow: {
+            // just in case
+        },
+        stoneOverflow: {
+            // ...
+        },
+        acidicMud: {
+            color: "rgba(140,110,80,0.8)",
+            flameColor: "rgba(255,120,80,0.8)",
+            densityFactor: 1.2,
+            viscosityFactor: 0.1,
+            thermalCond: 0.2,
+            flammable: false,
+            burnTemp: 9999,
+            transformOnBurn: null,
+            transformOnTemp: null
+        },
+    };
+
+    // === Particle Structure ===
+    function createParticle(x, y, materialKey) {
+      particles.push({
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        density: REST_DENSITY,
+        pressure: 0,
+        material: materialKey,
+        temperature: 20,
+        burning: false,
+        burnTime: 0
+      });
+    }
+
+    // === Spatial Hash Methods ===
+    function clearCellMap() {
+      cellMap.clear();
+    }
+    function getCellCoords(x, y) {
+      const cx = Math.floor(x / CELL_SIZE);
+      const cy = Math.floor(y / CELL_SIZE);
+      return {cx, cy};
+    }
+    function cellKey(cx, cy) {
+      return `${cx},${cy}`;
+    }
+    function addToCellMap(pIndex) {
+      const p = particles[pIndex];
+      const {cx, cy} = getCellCoords(p.x, p.y);
+      const key = cellKey(cx, cy);
+      if (!cellMap.has(key)) {
+        cellMap.set(key, []);
+      }
+      cellMap.get(key).push(pIndex);
+    }
+    function getNeighbors(pIndex) {
+      const p = particles[pIndex];
+      const {cx, cy} = getCellCoords(p.x, p.y);
+      const neighbors = [];
+      for (let yy = cy - 1; yy <= cy + 1; yy++) {
+        for (let xx = cx - 1; xx <= cx + 1; xx++) {
+          const key = cellKey(xx, yy);
+          if (!cellMap.has(key)) continue;
+          const list = cellMap.get(key);
+          for (let idx of list) {
+            if (idx === pIndex) continue;
+            neighbors.push(idx);
+          }
+        }
+      }
+      return neighbors;
+    }
+
+    // === SPH Density & Pressure ===
+    function computeDensityAndPressure() {
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const matP = materials[p.material];
+        const nList = getNeighbors(i);
+
+        let densitySum = 0;
+        for (let nIndex of nList) {
+          const n = particles[nIndex];
+          const matN = materials[n.material];
+          const dx = n.x - p.x;
+          const dy = n.y - p.y;
+          if (dx*dx + dy*dy <= H*H) {
+            densitySum += matN.densityFactor;
+          }
+        }
+        p.density = Math.max(densitySum, REST_DENSITY);
+        p.pressure = K * (p.density - REST_DENSITY);
+      }
+    }
+
+    // === 온도, 연소, 변환 ===
+    function updateTemperature(dt) {
+      // 열전달
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const matP = materials[p.material];
+        const nList = getNeighbors(i);
+
+        for (let nIndex of nList) {
+          const n = particles[nIndex];
+          const matN = materials[n.material];
+
+          // 거리 제한
+          const dx = n.x - p.x;
+          const dy = n.y - p.y;
+          if (dx*dx + dy*dy > H*H) continue;
+
+          const avgCond = 0.5 * (matP.thermalCond + matN.thermalCond);
+          const tempDiff = n.temperature - p.temperature;
+          const dT = tempDiff * avgCond * dt * fireSpreadRate;
+          p.temperature += dT * 0.5;
+          n.temperature -= dT * 0.5;
+        }
+      }
+      // 연소 & 변환
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const matP = materials[p.material];
+
+        // 불이 붙는 조건
+        if (!p.burning && matP.flammable && p.temperature >= matP.burnTemp) {
+          p.burning = true;
+          p.burnTime = 0;
+        }
+        // 불 붙으면 온도 상승
+        if (p.burning) {
+          p.temperature += 20 * dt * fireSpreadRate;
+          p.burnTime += dt;
+          // 일정 시간 후 변환(가연성 -> ash 등)
+          if (matP.transformOnBurn && p.burnTime > 2) {
+            transformParticle(i, matP.transformOnBurn);
+            continue;
+          }
+        }
+        // 온도 기반 변환 (예: ice -> water)
+        if (
+          matP.transformOnTemp &&
+          p.temperature >= matP.transformOnTemp.temp
+        ) {
+          transformParticle(i, matP.transformOnTemp.to);
+        }
+      }
+    }
+
+    function transformParticle(index, newMatKey) {
+      const p = particles[index];
+      p.material = newMatKey;
+      p.burning = false;
+      p.burnTime = 0;
+
+      // 변환 시 온도 조절 예시
+      if (newMatKey === "steam") {
+        p.temperature = 110;
+      } else if (newMatKey === "ash") {
+        p.temperature = 50;
+      } else if (newMatKey === "water") {
+        p.temperature = 10;
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 1) "일반 상호작용" (100개)
+    // ---------------------------------------------------------------------------
+    const normalInteractions = [
+      // (1)
+      { pair: ["water", "sand"], result: "wetSand" },
+      // (2)
+      { pair: ["water", "dust"], result: "muddyWater" },
+      // (3)
+      { pair: ["water", "charcoal"], result: "wetCharcoal" },
+      // (4)
+      { pair: ["milk", "acid"], result: "curdledMilk" },
+      // (5)
+      { pair: ["honey", "dust"], result: "stickyDust" },
+      // (6)
+      { pair: ["ice", "dust"], result: "frostedDust" },
+      // (7)
+      { pair: ["mud", "dust"], result: "dirtyPaste" },
+      // (8)
+      { pair: ["slime", "dust"], result: "gooeyDust" },
+      // (9)
+      { pair: ["sand", "dust"], result: "sandyDust" },
+      // (10)
+      { pair: ["salt", "water"], result: "saltWater" },
+
+      // (11)
+      { pair: ["sugar", "water"], result: "sugarWater" },
+      // (12)
+      { pair: ["sand", "mud"], result: "muddySand" },
+      // (13)
+      { pair: ["ice", "sand"], result: "coldSand" },
+      // (14)
+      { pair: ["ash", "dust"], result: "grayDust" },
+      // (15)
+      { pair: ["ash", "sand"], result: "graySand" },
+      // (16)
+      { pair: ["ash", "mud"], result: "ashMud" },
+      // (17)
+      { pair: ["milk", "sand"], result: "milkSand" },
+      // (18)
+      { pair: ["milk", "dust"], result: "milkDust" },
+      // (19)
+      { pair: ["milk", "slime"], result: "spoiledSlime" },
+      // (20)
+      { pair: ["milk", "honey"], result: "sweetMilk" },
+
+      // (21)
+      { pair: ["milk", "sugar"], result: "milkSugarMix" },
+      // (22)
+      { pair: ["milk", "salt"], result: "saltyMilk" },
+      // (23)
+      { pair: ["milk", "flour"], result: "dough" },
+      // (24)
+      { pair: ["milk", "charcoal"], result: "blackenedMilk" },
+      // (25)
+      { pair: ["honey", "sand"], result: "honeySand" },
+      // (26)
+      { pair: ["honey", "mud"], result: "stickyMud" },
+      // (27)
+      { pair: ["honey", "slime"], result: "slimyHoney" },
+      // (28)
+      { pair: ["honey", "charcoal"], result: "honeyedCharcoal" },
+      // (29)
+      { pair: ["ice", "charcoal"], result: "coldCharcoal" },
+      // (30)
+      { pair: ["ice", "salt"], result: "coldBrine" },
+
+      // (31)
+      { pair: ["ice", "sugar"], result: "sweetIce" },
+      // (32)
+      { pair: ["ice", "flour"], result: "coldFlour" },
+      // (33)
+      { pair: ["salt", "sand"], result: "saltySand" },
+      // (34)
+      { pair: ["salt", "dust"], result: "saltyDust" },
+      // (35)
+      { pair: ["salt", "slime"], result: "dehydratedSlime" },
+      // (36)
+      { pair: ["salt", "honey"], result: "saltedHoney" },
+      // (37)
+      { pair: ["sugar", "dust"], result: "powderedSugar" },
+      // (38)
+      { pair: ["sugar", "slime"], result: "syrupySlime" },
+      // (39)
+      { pair: ["sugar", "flour"], result: "bakingMix" },
+      // (40)
+      { pair: ["sugar", "ash"], result: "sweetAsh" },
+
+      // (41)
+      { pair: ["flour", "sand"], result: "grittyFlour" },
+      // (42)
+      { pair: ["flour", "dust"], result: "powderMix" },
+      // (43)
+      { pair: ["flour", "charcoal"], result: "blackFlour" },
+      // (44)
+      { pair: ["rock", "dust"], result: "stonePowder" },
+      // (45)
+      { pair: ["rock", "sand"], result: "crushedRock" },
+      // (46)
+      { pair: ["wood", "dust"], result: "sawdust" },
+      // (47)
+      { pair: ["wood", "sand"], result: "sandyWood" },
+      // (48)
+      { pair: ["wood", "charcoal"], result: "charredWood" },
+      // (49)
+      { pair: ["coal", "sand"], result: "coalSandMix" },
+      // (50)
+      { pair: ["coal", "dust"], result: "coalDust" },
+
+      // (51)
+      { pair: ["coal", "ash"], result: "coalAshMix" },
+      // (52)
+      { pair: ["charcoal", "coal"], result: "carbonMix" },
+      // (53)
+      { pair: ["soap", "water"], result: "soapyWater" },
+      // (54)
+      { pair: ["soap", "sand"], result: "sandySoap" },
+      // (55)
+      { pair: ["soap", "dust"], result: "dustySoap" },
+      // (56)
+      { pair: ["soap", "ash"], result: "graySoap" },
+      // (57)
+      { pair: ["soap", "milk"], result: "milkSoap" },
+      // (58)
+      { pair: ["soap", "honey"], result: "stickySoap" },
+      // (59)
+      { pair: ["soap", "slime"], result: "cleanSlime" },
+      // (60)
+      { pair: ["soap", "acid"], result: "neutralizedSoap" },
+
+      // (61)
+      { pair: ["mercury", "sand"], result: "mercurySand" },
+      // (62)
+      { pair: ["mercury", "dust"], result: "mercuryDust" },
+      // (63)
+      { pair: ["blood", "dust"], result: "bloodDust" },
+      // (64)
+      { pair: ["blood", "sand"], result: "bloodySand" },
+      // (65)
+      { pair: ["tar", "dust"], result: "tarDust" },
+      // (66)
+      { pair: ["tar", "sand"], result: "tarSand" },
+      // (67)
+      { pair: ["cement", "sand"], result: "cementSandMix" },
+      // (68)
+      { pair: ["cement", "dust"], result: "cementPowder" },
+      // (69)
+      { pair: ["gel", "dust"], result: "gelDust" },
+      // (70)
+      { pair: ["gel", "sand"], result: "gelSand" },
+
+      // (71)
+      { pair: ["plastic", "dust"], result: "plasticDust" },
+      // (72)
+      { pair: ["plastic", "sand"], result: "plasticSand" },
+      // (73)
+      { pair: ["uranium", "dust"], result: "radioactiveDust" },
+      // (74)
+      { pair: ["uranium", "sand"], result: "radioactiveSand" },
+      // (75)
+      { pair: ["plasma", "dust"], result: "energizedDust" },
+      // (76)
+      { pair: ["plasma", "sand"], result: "energizedSand" },
+      // (77)
+      { pair: ["rocketFuel", "dust"], result: "explosiveDust" },
+      // (78)
+      { pair: ["rocketFuel", "sand"], result: "explosiveSand" },
+      // (79)
+      { pair: ["wax", "dust"], result: "waxDust" },
+      // (80)
+      { pair: ["wax", "sand"], result: "waxSand" },
+
+      // (81)
+      { pair: ["rubber", "dust"], result: "rubberDust" },
+      // (82)
+      { pair: ["rubber", "sand"], result: "rubberSand" },
+      // (83)
+      { pair: ["lead", "dust"], result: "leadDust" },
+      // (84)
+      { pair: ["lead", "sand"], result: "leadSand" },
+      // (85)
+      { pair: ["gold", "dust"], result: "goldDust" },
+      // (86)
+      { pair: ["gold", "sand"], result: "goldSand" },
+      // (87)
+      { pair: ["silver", "dust"], result: "silverDust" },
+      // (88)
+      { pair: ["silver", "sand"], result: "silverSand" },
+      // (89)
+      { pair: ["grass", "dust"], result: "grassyDust" },
+      // (90)
+      { pair: ["grass", "sand"], result: "grassySand" },
+
+      // (91)
+      { pair: ["mud", "dust"], result: "muddyDust" },
+      // (92)
+      { pair: ["mud", "sand"], result: "muddySand" },
+      // (93)
+      { pair: ["clay", "dust"], result: "clayPowder" },
+      // (94)
+      { pair: ["hydrogen", "dust"], result: "lightDust" },
+      // (95)
+      { pair: ["charcoal", "paper"], result: "blackPaper" },
+      // (96)
+      { pair: ["gunPowder", "dust"], result: "volatileDust" },
+      // (97)
+      { pair: ["spice", "dust"], result: "spicyDust" },
+      // (98)
+      { pair: ["chocolate", "dust"], result: "cocoaDust" },
+      // (99)
+      { pair: ["plasticine", "dust"], result: "stickyClayMix" },
+      // (100)
+      { pair: ["dust", "rust"], result: "rustDust" }
+    ];
+
+    // ---------------------------------------------------------------------------
+    // 2) "고급 상호작용" (100개)
+    // ---------------------------------------------------------------------------
+    const advancedInteractions = [
+      // (1)
+      {
+        pair: ["water", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "steam");
+          transformParticle(nIndex, "obsidian");
+        }
+      },
+      // (2)
+      {
+        pair: ["acid", "metal"],
+        condition: (p, n) => Math.random() < 0.9,
+        onReact: (pIndex, nIndex) => {
+          const pm = particles[pIndex].material;
+          if (pm === "metal") {
+            transformParticle(pIndex, "rust");
+            transformParticle(nIndex, "dilutedAcid");
+          } else {
+            transformParticle(nIndex, "rust");
+            transformParticle(pIndex, "dilutedAcid");
+          }
+        }
+      },
+      // (3)
+      {
+        pair: ["water", "acid"],
+        condition: (p, n) => (p.temperature + n.temperature) < 80,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "dilutedAcid");
+          transformParticle(nIndex, "dilutedAcid");
+        }
+      },
+      // (4)
+      {
+        pair: ["charcoal", "sugar"],
+        condition: (p, n) => (p.temperature + n.temperature) > 250,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (5)
+      {
+        pair: ["steam", "firePowder"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+
+      // (6)
+      {
+        pair: ["oil", "wood"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (7)
+      {
+        pair: ["charcoal", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 600,
+        onReact: (pIndex, nIndex) => {
+          // 제강 처리
+          transformParticle(pIndex, "steel");
+          transformParticle(nIndex, "steel");
+        }
+      },
+      // (8)
+      {
+        pair: ["dust", "steam"],
+        condition: (p, n) => p.temperature > 80 || n.temperature > 80,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "clumpedDust");
+          transformParticle(nIndex, "clumpedDust");
+        }
+      },
+      // (9)
+      {
+        pair: ["sand", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 400,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "glass");
+          transformParticle(nIndex, "glass");
+        }
+      },
+      // (10)
+      {
+        pair: ["sugar", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+
+      // (11)
+      {
+        pair: ["ash", "lava"],
+        condition: (p, n) => Math.random() < 0.3,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "volcanicRock");
+          transformParticle(nIndex, "volcanicRock");
+        }
+      },
+      // (12)
+      {
+        pair: ["rust", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 700,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ironRock");
+          transformParticle(nIndex, "ironRock");
+        }
+      },
+      // (13)
+      {
+        pair: ["acid", "charcoal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "co2Gas");
+          transformParticle(nIndex, "co2Gas");
+        }
+      },
+      // (14)
+      {
+        pair: ["saltWater", "wood"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          // 소금기 스며든 나무
+          if (particles[pIndex].material === "wood") {
+            transformParticle(pIndex, "saltedWood");
+          } else {
+            transformParticle(nIndex, "saltedWood");
+          }
+        }
+      },
+      // (15)
+      {
+        pair: ["wetSand", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "glass");
+          transformParticle(nIndex, "glass");
+        }
+      },
+
+      // (16)
+      {
+        pair: ["moltenMetal", "sand"],
+        condition: (p, n) => (p.temperature + n.temperature) > 500,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "metalCast");
+          transformParticle(nIndex, "metalCast");
+        }
+      },
+      // (17)
+      {
+        pair: ["sugarWater", "charcoal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 250,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (18)
+      {
+        pair: ["oil", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (19)
+      {
+        pair: ["weakAcid", "metal"],
+        condition: (p, n) => Math.random() < 0.3,
+        onReact: (pIndex, nIndex) => {
+          // 부식
+          if (particles[pIndex].material === "metal") {
+            transformParticle(pIndex, "rust");
+          } else {
+            transformParticle(nIndex, "rust");
+          }
+        }
+      },
+      // (20)
+      {
+        pair: ["steam", "dust"],
+        condition: (p, n) => Math.random() < 0.2,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "mud");
+          transformParticle(nIndex, "mud");
+        }
+      },
+
+      // (21)
+      {
+        pair: ["steam", "salt"],
+        condition: (p, n) => (p.temperature + n.temperature) > 120,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltySteam");
+          transformParticle(nIndex, "saltySteam");
+        }
+      },
+      // (22)
+      {
+        pair: ["steam", "charcoal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "coGas");
+          transformParticle(nIndex, "coGas");
+        }
+      },
+      // (23)
+      {
+        pair: ["diamond", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "graphite");
+          transformParticle(nIndex, "graphite");
+        }
+      },
+      // (24)
+      {
+        pair: ["diamond", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 800,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "carbide");
+          transformParticle(nIndex, "carbide");
+        }
+      },
+      // (25)
+      {
+        pair: ["stone", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 500,
+        onReact: (pIndex, nIndex) => {
+          if (particles[pIndex].material === "stone") {
+            transformParticle(pIndex, "lava");
+          } else {
+            transformParticle(nIndex, "lava");
+          }
+        }
+      },
+
+      // (26)
+      {
+        pair: ["stone", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 600,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "slag");
+          transformParticle(nIndex, "slag");
+        }
+      },
+      // (27)
+      {
+        pair: ["stone", "acid"],
+        condition: (p, n) => (p.temperature + n.temperature) > 50,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "erodedStone");
+          transformParticle(nIndex, "erodedStone");
+        }
+      },
+      // (28)
+      {
+        pair: ["stone", "saltWater"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltEncrustedStone");
+          transformParticle(nIndex, "saltEncrustedStone");
+        }
+      },
+      // (29)
+      {
+        pair: ["glass", "dust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "opaqueGlass");
+          transformParticle(nIndex, "opaqueGlass");
+        }
+      },
+      // (30)
+      {
+        pair: ["glass", "lava"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          // 녹아버림
+          if (particles[pIndex].material === "glass") {
+            transformParticle(pIndex, "lava");
+          } else {
+            transformParticle(nIndex, "lava");
+          }
+        }
+      },
+
+      // (31)
+      {
+        pair: ["glass", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 700,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "metalGlassAlloy");
+          transformParticle(nIndex, "metalGlassAlloy");
+        }
+      },
+      // (32)
+      {
+        pair: ["glass", "wood"],
+        condition: (p, n) => (p.temperature + n.temperature) > 250,
+        onReact: (pIndex, nIndex) => {
+          // 나무가 타서 재
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (33)
+      {
+        pair: ["glass", "acid"],
+        condition: (p, n) => Math.random() < 0.2,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "etchedGlass");
+          transformParticle(nIndex, "etchedGlass");
+        }
+      },
+      // (34)
+      {
+        pair: ["glass", "steam"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "foggyGlass");
+          transformParticle(nIndex, "foggyGlass");
+        }
+      },
+      // (35)
+      {
+        pair: ["ash", "charcoal"],
+        condition: (p, n) => Math.random() < 0.4,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "blackAsh");
+          transformParticle(nIndex, "blackAsh");
+        }
+      },
+
+      // (36)
+      {
+        pair: ["rust", "charcoal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 500,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "iron");
+          transformParticle(nIndex, "iron");
+        }
+      },
+      // (37)
+      {
+        pair: ["rust", "wood"],
+        condition: (p, n) => Math.random() < 0.3,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "reddishWood");
+          transformParticle(nIndex, "reddishWood");
+        }
+      },
+      // (38)
+      {
+        pair: ["rust", "water"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          if (particles[pIndex].material === "rust") {
+            transformParticle(nIndex, "rustyWater");
+          } else {
+            transformParticle(pIndex, "rustyWater");
+          }
+        }
+      },
+      // (39)
+      {
+        pair: ["salt", "steam"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltySteam");
+          transformParticle(nIndex, "saltySteam");
+        }
+      },
+      // (40)
+      {
+        pair: ["sugar", "steam"],
+        condition: (p, n) => (p.temperature + n.temperature) > 120,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "syrup");
+          transformParticle(nIndex, "syrup");
+        }
+      },
+
+      // (41)
+      {
+        pair: ["metal", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 700,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "alloy");
+          transformParticle(nIndex, "alloy");
+        }
+      },
+      // (42)
+      {
+        pair: ["metal", "rust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 400,
+        onReact: (pIndex, nIndex) => {
+          // 녹아버려서 모두 rust
+          transformParticle(pIndex, "rust");
+          transformParticle(nIndex, "rust");
+        }
+      },
+      // (43)
+      {
+        pair: ["metal", "stone"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1000,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "slag");
+          transformParticle(nIndex, "slag");
+        }
+      },
+      // (44)
+      {
+        pair: ["metal", "ash"],
+        condition: (p, n) => (p.temperature + n.temperature) > 400,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "slag");
+          transformParticle(nIndex, "slag");
+        }
+      },
+      // (45)
+      {
+        pair: ["metal", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1500,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "hyperAlloy");
+          transformParticle(nIndex, "hyperAlloy");
+        }
+      },
+
+      // (46)
+      {
+        pair: ["wood", "diamond"],
+        condition: (p, n) => Math.random() < 0.1,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "decorWood");
+          transformParticle(nIndex, "decorWood");
+        }
+      },
+      // (47)
+      {
+        pair: ["wood", "rust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "rottedWood");
+          transformParticle(nIndex, "rottedWood");
+        }
+      },
+      // (48)
+      {
+        pair: ["wood", "ash"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "dirtyWood");
+          transformParticle(nIndex, "dirtyWood");
+        }
+      },
+      // (49)
+      {
+        pair: ["wood", "acid"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (50)
+      {
+        pair: ["charcoal", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1000,
+        onReact: (pIndex, nIndex) => {
+          // 장난성 → 둘 다 다이아로 바뀜
+          transformParticle(pIndex, "diamond");
+          transformParticle(nIndex, "diamond");
+        }
+      },
+
+      // (51)
+      {
+        pair: ["charcoal", "lava"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (52)
+      {
+        pair: ["charcoal", "steam"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "syngas");
+          transformParticle(nIndex, "syngas");
+        }
+      },
+      // (53)
+      {
+        pair: ["sand", "steam"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "clumpedSand");
+          transformParticle(nIndex, "clumpedSand");
+        }
+      },
+      // (54)
+      {
+        pair: ["dust", "salt"],
+        condition: (p, n) => Math.random() < 0.4,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltyDust");
+          transformParticle(nIndex, "saltyDust");
+        }
+      },
+      // (55)
+      {
+        pair: ["lava", "oil"],
+        condition: (p, n) => (p.temperature + n.temperature) > 250,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+
+      // (56)
+      {
+        pair: ["lava", "wood"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (57)
+      {
+        pair: ["lava", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 800,
+        onReact: (pIndex, nIndex) => {
+          if (particles[pIndex].material === "metal") {
+            transformParticle(pIndex, "moltenMetal");
+          } else {
+            transformParticle(nIndex, "moltenMetal");
+          }
+        }
+      },
+      // (58)
+      {
+        pair: ["lava", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "graphite");
+          transformParticle(nIndex, "graphite");
+        }
+      },
+      // (59)
+      {
+        pair: ["lava", "rust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 600,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "moltenIron");
+          transformParticle(nIndex, "moltenIron");
+        }
+      },
+      // (60)
+      {
+        pair: ["lava", "acid"],
+        condition: (p, n) => (p.temperature + n.temperature) > 400,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+
+      // (61)
+      {
+        pair: ["sugarWater", "salt"],
+        condition: (p, n) => (p.temperature + n.temperature) < 50,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "brineSolution");
+          transformParticle(nIndex, "brineSolution");
+        }
+      },
+      // (62)
+      {
+        pair: ["sugarWater", "sand"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "stickySand");
+          transformParticle(nIndex, "stickySand");
+        }
+      },
+      // (63)
+      {
+        pair: ["sugarWater", "acid"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "blackResidue");
+          transformParticle(nIndex, "blackResidue");
+        }
+      },
+      // (64)
+      {
+        pair: ["saltWater", "dust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 50,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltyMud");
+          transformParticle(nIndex, "saltyMud");
+        }
+      },
+      // (65)
+      {
+        pair: ["weakAcid", "rust"],
+        condition: (p, n) => Math.random() < 0.3,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ironSolution");
+          transformParticle(nIndex, "ironSolution");
+        }
+      },
+
+      // (66)
+      {
+        pair: ["weakAcid", "wood"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "rottedWood");
+          transformParticle(nIndex, "rottedWood");
+        }
+      },
+      // (67)
+      {
+        pair: ["weakAcid", "stone"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "erodedStone");
+          transformParticle(nIndex, "erodedStone");
+        }
+      },
+      // (68)
+      {
+        pair: ["weakAcid", "sand"],
+        condition: (p, n) => Math.random() < 0.5,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "porousSand");
+          transformParticle(nIndex, "porousSand");
+        }
+      },
+      // (69)
+      {
+        pair: ["weakAcid", "metal"],
+        condition: (p, n) => Math.random() < 0.2,
+        onReact: (pIndex, nIndex) => {
+          if (particles[pIndex].material === "metal") {
+            transformParticle(pIndex, "rust");
+          } else {
+            transformParticle(nIndex, "rust");
+          }
+        }
+      },
+      // (70)
+      {
+        pair: ["weakAcid", "oil"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "acidicEmulsion");
+          transformParticle(nIndex, "acidicEmulsion");
+        }
+      },
+
+      // (71)
+      {
+        pair: ["steam", "stone"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "crackedStone");
+          transformParticle(nIndex, "crackedStone");
+        }
+      },
+      // (72)
+      {
+        pair: ["steam", "wood"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "steamedWood");
+          transformParticle(nIndex, "steamedWood");
+        }
+      },
+      // (73)
+      {
+        pair: ["steam", "metal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 500,
+        onReact: (pIndex, nIndex) => {
+          if (particles[pIndex].material === "metal") {
+            transformParticle(pIndex, "rust");
+          } else {
+            transformParticle(nIndex, "rust");
+          }
+        }
+      },
+      // (74)
+      {
+        pair: ["steam", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1300,
+        onReact: (pIndex, nIndex) => {
+          // 극단적인 상황 → co2Gas (가정)
+          transformParticle(pIndex, "co2Gas");
+          transformParticle(nIndex, "co2Gas");
+        }
+      },
+      // (75)
+      {
+        pair: ["steam", "glass"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "foggyGlass");
+          transformParticle(nIndex, "foggyGlass");
+        }
+      },
+
+      // (76)
+      {
+        pair: ["steam", "ash"],
+        condition: (p, n) => Math.random() < 0.4,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "slurry");
+          transformParticle(nIndex, "slurry");
+        }
+      },
+      // (77)
+      {
+        pair: ["oil", "ash"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "tarLikeResidue");
+          transformParticle(nIndex, "tarLikeResidue");
+        }
+      },
+      // (78)
+      {
+        pair: ["oil", "rust"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          // 녹 방지? (가정)
+          transformParticle(pIndex, "oiledMetal");
+          transformParticle(nIndex, "oiledMetal");
+        }
+      },
+      // (79)
+      {
+        pair: ["oil", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 500,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "ash");
+          transformParticle(nIndex, "ash");
+        }
+      },
+      // (80)
+      {
+        pair: ["oil", "glass"],
+        condition: (p, n) => (p.temperature + n.temperature) > 300,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "smokyGlass");
+          transformParticle(nIndex, "smokyGlass");
+        }
+      },
+
+      // (81)
+      {
+        pair: ["charcoal", "stone"],
+        condition: (p, n) => (p.temperature + n.temperature) > 600,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "lime");
+          transformParticle(nIndex, "lime");
+        }
+      },
+      // (82)
+      {
+        pair: ["dust", "diamond"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1500,
+        onReact: (pIndex, nIndex) => {
+          // 먼지가 다이아로...
+          transformParticle(pIndex, "diamond");
+          transformParticle(nIndex, "diamond");
+        }
+      },
+      // (83)
+      {
+        pair: ["salt", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 800,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "moltenSalt");
+          transformParticle(nIndex, "moltenSalt");
+        }
+      },
+      // (84)
+      {
+        pair: ["sugar", "charcoal"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "caramelResidue");
+          transformParticle(nIndex, "caramelResidue");
+        }
+      },
+      // (85)
+      {
+        pair: ["sugar", "wood"],
+        condition: (p, n) => Math.random() < 0.3,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "sweetWood");
+          transformParticle(nIndex, "sweetWood");
+        }
+      },
+
+      // (86)
+      {
+        pair: ["sugar", "acid"],
+        condition: (p, n) => true,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "carbonFoam");
+          transformParticle(nIndex, "carbonFoam");
+        }
+      },
+      // (87)
+      {
+        pair: ["salt", "wood"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "saltedWood");
+          transformParticle(nIndex, "saltedWood");
+        }
+      },
+      // (88)
+      {
+        pair: ["dust", "wood"],
+        condition: (p, n) => Math.random() < 0.6,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "dustyWood");
+          transformParticle(nIndex, "dustyWood");
+        }
+      },
+      // (89)
+      {
+        pair: ["steam", "rust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "wetRust");
+          transformParticle(nIndex, "wetRust");
+        }
+      },
+      // (90)
+      {
+        pair: ["steam", "ash"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "paste");
+          transformParticle(nIndex, "paste");
+        }
+      },
+
+      // (91)
+      {
+        pair: ["steam", "lava"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "stone");
+          transformParticle(nIndex, "stone");
+        }
+      },
+      // (92)
+      {
+        pair: ["steam", "acid"],
+        condition: (p, n) => (p.temperature + n.temperature) > 100,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "acidicVapor");
+          transformParticle(nIndex, "acidicVapor");
+        }
+      },
+      // (93)
+      {
+        pair: ["steam", "oil"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "oilEmulsion");
+          transformParticle(nIndex, "oilEmulsion");
+        }
+      },
+      // (94)
+      {
+        pair: ["steam", "diamond"],
+        condition: (p, n) => Math.random() < 0.05,
+        onReact: (pIndex, nIndex) => {
+          // 아주 낮은 확률로 그냥 다이아 그대로
+          transformParticle(pIndex, "diamond");
+          transformParticle(nIndex, "diamond");
+        }
+      },
+      // (95)
+      {
+        pair: ["charcoal", "rust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 700,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "metal");
+          transformParticle(nIndex, "metal");
+        }
+      },
+
+      // (96)
+      {
+        pair: ["diamond", "ash"],
+        condition: (p, n) => (p.temperature + n.temperature) > 1200,
+        onReact: (pIndex, nIndex) => {
+          // 큰 변화 없음
+          // transformParticle(...) 하지 않음
+        }
+      },
+      // (97)
+      {
+        pair: ["salt", "ash"],
+        condition: (p, n) => Math.random() < 0.2,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "lye");
+          transformParticle(nIndex, "lye");
+        }
+      },
+      // (98)
+      {
+        pair: ["sugar", "steam"],
+        condition: (p, n) => (p.temperature + n.temperature) > 200,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "syrup");
+          transformParticle(nIndex, "syrup");
+        }
+      },
+      // (99)
+      {
+        pair: ["lava", "stone"],
+        condition: (p, n) => (p.temperature + n.temperature) > 600,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "lava");
+          transformParticle(nIndex, "lava");
+        }
+      },
+      // (100)
+      {
+        pair: ["acid", "dust"],
+        condition: (p, n) => (p.temperature + n.temperature) > 150,
+        onReact: (pIndex, nIndex) => {
+          transformParticle(pIndex, "acidicMud");
+          transformParticle(nIndex, "acidicMud");
+        }
+      }
+    ];
+
+    // === 고급 상호작용 + 일반 상호작용 업데이트 (변환 요청 임시 저장 후 일괄 적용) ===
+    function updateMaterialInteractions(dt) {
+      // 이번 프레임에 발생한 변환을 임시로 저장
+      const transformations = []; // { index, newMat }
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const nList = getNeighbors(i);
+
+        for (let j = 0; j < nList.length; j++) {
+          const nIndex = nList[j];
+          if (nIndex <= i) continue; // 중복 방지
+
+          const neighbor = particles[nIndex];
+          const pMat = p.material;
+          const nMat = neighbor.material;
+
+          // --- 1) 일반 상호작용 (100개) ---
+          for (let rule of normalInteractions) {
+            if (
+              (pMat === rule.pair[0] && nMat === rule.pair[1]) ||
+              (pMat === rule.pair[1] && nMat === rule.pair[0])
+            ) {
+              // 두 입자를 모두 rule.result로 변환
+              transformations.push({ index: i, newMat: rule.result });
+              transformations.push({ index: nIndex, newMat: rule.result });
+              // 한 번 변환 후에는 break
+              break;
+            }
+          }
+
+          // --- 2) 고급 상호작용 (100개) ---
+          for (let adv of advancedInteractions) {
+            if (
+              (pMat === adv.pair[0] && nMat === adv.pair[1]) ||
+              (pMat === adv.pair[1] && nMat === adv.pair[0])
+            ) {
+              if (adv.condition(p, neighbor)) {
+                adv.onReact(i, nIndex);
+              }
+            }
+          }
+        }
+      }
+
+      // 모든 (i, nIndex) 쌍 검사 후, 변환 요청을 한 번에 적용
+      for (let t of transformations) {
+        transformParticle(t.index, t.newMat);
+      }
+    }
+
+    // === Granular Collision ===
+    function resolveGranularCollisions(dt) {
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const nList = getNeighbors(i);
+
+        for (let nIndex of nList) {
+          if (nIndex <= i) continue;
+          const n = particles[nIndex];
+
+          let dx = n.x - p.x;
+          let dy = n.y - p.y;
+          const dist2 = dx*dx + dy*dy;
+          const minDist = PARTICLE_RADIUS * 2;
+          if (dist2 < minDist*minDist) {
+            const dist = Math.sqrt(dist2) || 1e-12;
+            const overlap = minDist - dist;
+
+            const nx = dx / dist;
+            const ny = dy / dist;
+
+            const push = overlap * 0.5;
+            p.x -= nx * push;
+            p.y -= ny * push;
+            n.x += nx * push;
+            n.y += ny * push;
+
+            let relVx = n.vx - p.vx;
+            let relVy = n.vy - p.vy;
+            const vn = relVx*nx + relVy*ny;
+            if (vn > 0) {
+              const impulse = (1 + restitution) * vn * 0.5;
+              p.vx += impulse * nx;
+              p.vy += impulse * ny;
+              n.vx -= impulse * nx;
+              n.vy -= impulse * ny;
+
+              relVx = n.vx - p.vx;
+              relVy = n.vy - p.vy;
+              const vt = relVx * (-ny) + relVy * (nx);
+              const frictionImpulse = frictionCoefficient * vt * 0.5;
+              p.vx += frictionImpulse * (-ny);
+              p.vy += frictionImpulse * (nx);
+              n.vx -= frictionImpulse * (-ny);
+              n.vy -= frictionImpulse * (nx);
+            }
+          }
+        }
+      }
+    }
+
+    // === 전체 파티클 업데이트 ===
+    function updateParticles(dt) {
+      clearCellMap();
+      for (let i = 0; i < particles.length; i++) {
+        addToCellMap(i);
+      }
+
+      // SPH 밀도/압력
+      computeDensityAndPressure();
+      // 온도/연소/변환
+      updateTemperature(dt);
+      // 상호작용(일반 + 고급)
+      updateMaterialInteractions(dt);
+
+      // SPH 압력 & 점성
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const matP = materials[p.material];
+
+        let fx = 0, fy = 0;
+        const nList = getNeighbors(i);
+        for (let nIndex of nList) {
+          const n = particles[nIndex];
+          const matN = materials[n.material];
+          const dx = n.x - p.x;
+          const dy = n.y - p.y;
+          const dist2 = dx*dx + dy*dy;
+          if (dist2 > H*H || dist2 < 1e-12) continue;
+          const r = Math.sqrt(dist2);
+
+          // 압력
+          const avgPressure = 0.5 * (p.pressure + n.pressure);
+          const pressureFactor = avgPressure / r;
+          fx -= dx * pressureFactor;
+          fy -= dy * pressureFactor;
+
+          // 점성
+          const avgVisc = 0.5 * (matP.viscosityFactor + matN.viscosityFactor);
+          const rvx = n.vx - p.vx;
+          const rvy = n.vy - p.vy;
+          fx += avgVisc * rvx;
+          fy += avgVisc * rvy;
+        }
+
+        // 중력 / 부력
+        if (p.material === "steam" || p.material === "steamSuperhot") {
+          fy -= Math.abs(GRAVITY * 0.3);
+        } else {
+          fy += GRAVITY * MASS;
+        }
+
+        p.vx += fx * dt;
+        p.vy += fy * dt;
+      }
+
+      // Granular 충돌
+      resolveGranularCollisions(dt);
+
+      // 위치 + 벽 충돌
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        if (p.x < 0) {
+          p.x = 0;
+          p.vx *= -0.5;
+        }
+        if (p.x > canvas.width) {
+          p.x = canvas.width;
+          p.vx *= -0.5;
+        }
+        if (p.y < 0) {
+          p.y = 0;
+          p.vy *= -0.5;
+        }
+        if (p.y > canvas.height) {
+          p.y = canvas.height;
+          p.vy *= -0.5;
+        }
+      }
+    }
+
+    // === 렌더링 ===
+    function drawParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const matP = materials[p.material];
+
+        let fillStyle = matP.color;
+        if (p.burning) {
+          const t = Math.min(p.temperature / 1000, 1);
+          fillStyle = lerpColor(matP.color, matP.flameColor, t);
+        }
+
+        ctx.beginPath();
+        ctx.fillStyle = fillStyle;
+        ctx.arc(p.x, p.y, PARTICLE_RADIUS, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    function lerpColor(c1, c2, t) {
+      const rgba1 = c1.match(/rgba?\((\d+),(\d+),(\d+),?([\d\.]+)?\)/);
+      const rgba2 = c2.match(/rgba?\((\d+),(\d+),(\d+),?([\d\.]+)?\)/);
+
+      const r1 = parseInt(rgba1[1]), g1 = parseInt(rgba1[2]), b1 = parseInt(rgba1[3]);
+      const a1 = rgba1[4] ? parseFloat(rgba1[4]) : 1.0;
+      const r2 = parseInt(rgba2[1]), g2 = parseInt(rgba2[2]), b2 = parseInt(rgba2[3]);
+      const a2 = rgba2[4] ? parseFloat(rgba2[4]) : 1.0;
+
+      const r = r1 + (r2 - r1) * t;
+      const g = g1 + (g2 - g1) * t;
+      const b = b1 + (b2 - b1) * t;
+      const a = a1 + (a2 - a1) * t;
+
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
+    // === 메인 루프 ===
+    let lastTime = 0;
+    function loop(timestamp) {
+      requestAnimationFrame(loop);
+      const rawDt = (timestamp - lastTime) / 1000;
+      lastTime = timestamp;
+
+      const dt = Math.min(rawDt, 0.03) * timeScale;
+
+      updateParticles(dt);
+      drawParticles();
+    }
+    requestAnimationFrame(loop);
+
+    // === 마우스 입력 ===
+    let mouseDown = false;
+    canvas.addEventListener('mousedown', (e) => {
+      mouseDown = true;
+      spawnParticles(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (mouseDown) {
+        spawnParticles(e.clientX, e.clientY);
+      }
+    });
+    canvas.addEventListener('mouseup', () => {
+      mouseDown = false;
+    });
+
+    // 브러시 생성
+    function spawnParticles(mx, my) {
+      const mat = materialSelect.value;
+      const r = brushSize;
+      for (let i = 0; i < r * 1.5; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * r;
+        const px = mx + Math.cos(angle) * dist;
+        const py = my + Math.sin(angle) * dist;
+        createParticle(px, py, mat);
+      }
+    }
+
+    // === 윈도우 리사이즈 ===
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    // === UI 이벤트 ===
+    brushRange.addEventListener('input', () => {
+      brushSize = parseInt(brushRange.value);
+      brushVal.innerText = brushSize;
+    });
+    speedRange.addEventListener('input', () => {
+      timeScale = parseFloat(speedRange.value);
+      speedVal.innerText = timeScale.toFixed(1);
+    });
+    gravRange.addEventListener('input', () => {
+      GRAVITY = parseFloat(gravRange.value);
+      gravVal.innerText = GRAVITY.toFixed(0);
+    });
+    fireRange.addEventListener('input', () => {
+      fireSpreadRate = parseFloat(fireRange.value);
+      fireVal.innerText = fireSpreadRate.toFixed(1);
+    });
+  </script>
+</body>
+</html>
